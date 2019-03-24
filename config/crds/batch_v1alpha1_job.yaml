@@ -27,8 +27,24 @@ spec:
         metadata:
           type: object
         spec:
+          properties:
+            agent:
+              description: Agent name assigned by the controller
+              type: string
+            backoffLimit:
+              description: BackoffLimit to stop retrying after specified number of
+                times
+              format: int32
+              type: integer
           type: object
         status:
+          properties:
+            failed:
+              format: int32
+              type: integer
+            succeeded:
+              format: int32
+              type: integer
           type: object
   version: v1alpha1
 status:

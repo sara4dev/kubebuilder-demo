@@ -25,14 +25,18 @@ import (
 
 // JobSpec defines the desired state of Job
 type JobSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	//Agent name assigned by the controller
+	Agent string `json:"agent,omitempty"`
+	//BackoffLimit to stop retrying after specified number of times
+	BackoffLimit int32 `json:"backoffLimit,omitempty"`
 }
 
 // JobStatus defines the observed state of Job
 type JobStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	Succeeded int32 `json:"succeeded,omitempty"`
+	Failed    int32 `json:"failed,omitempty"`
+	//StartTime metav1.Time `json:"startTime,omitempty"`
+	//EndTime   metav1.Time `json:"endTime,omitempty"`
 }
 
 // +genclient
