@@ -36,6 +36,13 @@ spec:
                 times
               format: int32
               type: integer
+            dependOnJobs:
+              items:
+                type: string
+              type: array
+            result:
+              format: int32
+              type: integer
           type: object
         status:
           properties:

@@ -28,13 +28,24 @@ type JobSpec struct {
 	//Agent name assigned by the controller
 	Agent string `json:"agent,omitempty"`
 	//BackoffLimit to stop retrying after specified number of times
-	BackoffLimit int32 `json:"backoffLimit,omitempty"`
+	//BackoffLimit 	int32 `json:"backoffLimit,omitempty"`
+	Result       int32    `json:"result,omitempty"`
+	DependOnJobs []string `json:"dependOnJobs,omitempty"`
 }
+
+type State string
+
+const (
+	Pending   State = "Pending"
+	Succeeded State = "Succeeded"
+	Failed    State = "Failed"
+)
 
 // JobStatus defines the observed state of Job
 type JobStatus struct {
-	Succeeded int32 `json:"succeeded,omitempty"`
-	Failed    int32 `json:"failed,omitempty"`
+	State State `json:"state,omitempty"`
+	//Succeeded int32 `json:"succeeded,omitempty"`
+	//Failed    int32 `json:"failed,omitempty"`
 	//StartTime metav1.Time `json:"startTime,omitempty"`
 	//EndTime   metav1.Time `json:"endTime,omitempty"`
 }

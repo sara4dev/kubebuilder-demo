@@ -3,7 +3,29 @@ kind: Job
 metadata:
   labels:
     controller-tools.k8s.io: "1.0"
-  name: job-sample
+  name: job-c
 spec:
   # Add fields here
-  foo: bar
+  dependOnJobs:
+---
+apiVersion: batch.crossplane.io/v1alpha1
+kind: Job
+metadata:
+  labels:
+    controller-tools.k8s.io: "1.0"
+  name: job-b
+spec:
+# Add fields here
+  dependOnJobs:
+    - job-c
+---
+apiVersion: batch.crossplane.io/v1alpha1
+kind: Job
+metadata:
+  labels:
+    controller-tools.k8s.io: "1.0"
+  name: job-a
+spec:
+  # Add fields here
+  dependOnJobs:
+    - job-b

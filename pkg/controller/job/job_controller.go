@@ -18,23 +18,20 @@ package job
 
 import (
 	"context"
-	"reflect"
-
+	"fmt"
 	batchv1alpha1 "github.com/saravanakumar-periyasamy/kubebuilder-demo/pkg/apis/batch/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
+	"math/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+	"time"
 )
 
 var log = logf.Log.WithName("controller")
@@ -43,6 +40,88 @@ var log = logf.Log.WithName("controller")
 * USER ACTION REQUIRED: This is a scaffold file intended for the user to modify with their own Controller
 * business logic.  Delete these comments after modifying this file.*
  */
+
+type agent struct {
+	name         string
+	jobs         []*batchv1alpha1.Job
+	reconcileJob *ReconcileJob
+}
+
+func (a *agent) processJobs() {
+	for true {
+		log.Info("processing jobs...", "agent", a.name, "jobs", len(a.jobs))
+		for _, job := range a.jobs {
+			if job.Status.State == batchv1alpha1.Succeeded {
+				// DO Nothing
+			} else if a.isReadyForProcessing(job) {
+				log.Info("Processing job...", "agent", a.name, "job", job.Name)
+				time.Sleep(time.Duration(rand.Intn(25) + 5))
+				job.Spec.Result = rand.Int31n(100)
+				//TODO: write to events when job is processed
+				if job.Spec.Result%2 == 0 {
+					job.Status.State = batchv1alpha1.Succeeded
+					log.Info("Job Succeeded", "job", job.Name, "result", job.Spec.Result)
+				} else {
+					job.Status.State = batchv1alpha1.Failed
+					log.Info("Job Failed", "job", job.Name, "result", job.Spec.Result)
+				}
+			} else {
+				job.Status.State = batchv1alpha1.Pending
+			}
+			err := a.reconcileJob.Update(context.TODO(), job)
+			if err != nil {
+				log.Error(err, "Error while updating the job")
+			}
+		}
+		time.Sleep(5 * time.Second)
+	}
+}
+
+func (a *agent) isReadyForProcessing(job *batchv1alpha1.Job) bool {
+	//If not job has not succeeded
+	if job.Status.State != batchv1alpha1.Succeeded {
+		for _, dependentJobName := range job.Spec.DependOnJobs {
+			dependentJob, err := a.findJobByName(dependentJobName, job.Namespace)
+			if err != nil {
+				log.Error(err, "Error in finding job")
+			}
+			//return a.isReadyForProcessing(dependentJob)
+			if dependentJob.Status.State != batchv1alpha1.Succeeded {
+				log.Info("Dependent Job is not succeeded", "job", job.Name, "depedent-job", dependentJob.Name)
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+func (a *agent) findJobByName(name string, namespace string) (*batchv1alpha1.Job, error) {
+	jobList := batchv1alpha1.JobList{}
+	err := a.reconcileJob.List(context.TODO(), &client.ListOptions{Namespace: namespace}, &jobList)
+	if err != nil {
+		return nil, err
+	}
+	for _, job := range jobList.Items {
+		if job.Name == name {
+			return &job, nil
+		}
+	}
+	return nil, fmt.Errorf("could not find the job %v in %v namespace", name, namespace)
+}
+
+var agents []*agent
+
+func init() {
+	agents = []*agent{
+		{name: "agent1", jobs: []*batchv1alpha1.Job{}},
+		//{name:"agent2", jobs: []*batchv1alpha1.Job{}},
+		//{name:"agent3", jobs: []*batchv1alpha1.Job{}},
+	}
+	for _, agent := range agents {
+		go agent.processJobs()
+	}
+}
 
 // Add creates a new Job Controller and adds it to the Manager with default RBAC. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
@@ -90,6 +169,14 @@ type ReconcileJob struct {
 	scheme *runtime.Scheme
 }
 
+// A simple scheduler that picks the agents randomly
+func (r *ReconcileJob) scheduleJobToAnAgent(job *batchv1alpha1.Job) string {
+	agent := agents[rand.Intn(len(agents))]
+	agent.jobs = append(agent.jobs, job)
+	agent.reconcileJob = r
+	return agent.name
+}
+
 // Reconcile reads that state of the cluster for a Job object and makes changes based on the state read
 // and what is in the Job.Spec
 // TODO(user): Modify this Reconcile function to implement your Controller logic.  The scaffolding writes
@@ -113,55 +200,64 @@ func (r *ReconcileJob) Reconcile(request reconcile.Request) (reconcile.Result, e
 		return reconcile.Result{}, err
 	}
 
-	// TODO(user): Change this to be the object type created by your controller
-	// Define the desired Deployment object
-	deploy := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      instance.Name + "-deployment",
-			Namespace: instance.Namespace,
-		},
-		Spec: appsv1.DeploymentSpec{
-			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{"deployment": instance.Name + "-deployment"},
-			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"deployment": instance.Name + "-deployment"}},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  "nginx",
-							Image: "nginx",
-						},
-					},
-				},
-			},
-		},
-	}
-	if err := controllerutil.SetControllerReference(instance, deploy, r.scheme); err != nil {
-		return reconcile.Result{}, err
-	}
-
-	// TODO(user): Change this for the object type created by your controller
-	// Check if the Deployment already exists
-	found := &appsv1.Deployment{}
-	err = r.Get(context.TODO(), types.NamespacedName{Name: deploy.Name, Namespace: deploy.Namespace}, found)
-	if err != nil && errors.IsNotFound(err) {
-		log.Info("Creating Deployment", "namespace", deploy.Namespace, "name", deploy.Name)
-		err = r.Create(context.TODO(), deploy)
-		return reconcile.Result{}, err
-	} else if err != nil {
-		return reconcile.Result{}, err
-	}
-
-	// TODO(user): Change this for the object type created by your controller
-	// Update the found object and write the result back if there are any changes
-	if !reflect.DeepEqual(deploy.Spec, found.Spec) {
-		found.Spec = deploy.Spec
-		log.Info("Updating Deployment", "namespace", deploy.Namespace, "name", deploy.Name)
-		err = r.Update(context.TODO(), found)
+	if instance.Spec.Agent == "" {
+		instance.Spec.Agent = r.scheduleJobToAnAgent(instance)
+		log.Info(instance.Spec.Agent)
+		err := r.Update(context.TODO(), instance)
 		if err != nil {
-			return reconcile.Result{}, err
+			log.Error(err, "Error while updating the resource")
 		}
 	}
+
+	//// TODO(user): Change this to be the object type created by your controller
+	//// Define the desired Deployment object
+	//deploy := &appsv1.Deployment{
+	//	ObjectMeta: metav1.ObjectMeta{
+	//		Name:      instance.Name + "-deployment",
+	//		Namespace: instance.Namespace,
+	//	},
+	//	Spec: appsv1.DeploymentSpec{
+	//		Selector: &metav1.LabelSelector{
+	//			MatchLabels: map[string]string{"deployment": instance.Name + "-deployment"},
+	//		},
+	//		Template: corev1.PodTemplateSpec{
+	//			ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"deployment": instance.Name + "-deployment"}},
+	//			Spec: corev1.PodSpec{
+	//				Containers: []corev1.Container{
+	//					{
+	//						Name:  "nginx",
+	//						Image: "nginx",
+	//					},
+	//				},
+	//			},
+	//		},
+	//	},
+	//}
+	//if err := controllerutil.SetControllerReference(instance, deploy, r.scheme); err != nil {
+	//	return reconcile.Result{}, err
+	//}
+	//
+	//// TODO(user): Change this for the object type created by your controller
+	//// Check if the Deployment already exists
+	//found := &appsv1.Deployment{}
+	//err = r.Get(context.TODO(), types.NamespacedName{Name: deploy.Name, Namespace: deploy.Namespace}, found)
+	//if err != nil && errors.IsNotFound(err) {
+	//	log.Info("Creating Deployment", "namespace", deploy.Namespace, "name", deploy.Name)
+	//	err = r.Create(context.TODO(), deploy)
+	//	return reconcile.Result{}, err
+	//} else if err != nil {
+	//	return reconcile.Result{}, err
+	//}
+	//
+	//// TODO(user): Change this for the object type created by your controller
+	//// Update the found object and write the result back if there are any changes
+	//if !reflect.DeepEqual(deploy.Spec, found.Spec) {
+	//	found.Spec = deploy.Spec
+	//	log.Info("Updating Deployment", "namespace", deploy.Namespace, "name", deploy.Name)
+	//	err = r.Update(context.TODO(), found)
+	//	if err != nil {
+	//		return reconcile.Result{}, err
+	//	}
+	//}
 	return reconcile.Result{}, nil
 }
