@@ -23,6 +23,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
 	"math/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -43,37 +44,42 @@ var log = logf.Log.WithName("controller")
 
 type agent struct {
 	name         string
-	jobs         []*batchv1alpha1.Job
+	jobsQueue    map[string]*batchv1alpha1.Job
 	reconcileJob *ReconcileJob
 }
 
 func (a *agent) processJobs() {
 	for true {
-		log.Info("processing jobs...", "agent", a.name, "jobs", len(a.jobs))
-		for _, job := range a.jobs {
-			if job.Status.State == batchv1alpha1.Succeeded {
-				// DO Nothing
+		log.Info("processing jobsQueue...", "agent", a.name, "jobsQueue", len(a.jobsQueue))
+		for key, job := range a.jobsQueue {
+			if job.Status.State == "" {
+				job.Status.State = batchv1alpha1.Pending
+				err := a.reconcileJob.Update(context.TODO(), job)
+				if err != nil {
+					log.Error(err, "Error while updating the job")
+				}
 			} else if a.isReadyForProcessing(job) {
 				log.Info("Processing job...", "agent", a.name, "job", job.Name)
 				time.Sleep(time.Duration(rand.Intn(25) + 5))
 				job.Spec.Result = rand.Int31n(100)
-				//TODO: write to events when job is processed
 				if job.Spec.Result%2 == 0 {
 					job.Status.State = batchv1alpha1.Succeeded
+					//remove from the job list
+					delete(a.jobsQueue, key)
+					a.reconcileJob.recorder.Event(job, "Normal", "Succeeded", "Job Succeeded, result:"+fmt.Sprint(job.Spec.Result))
 					log.Info("Job Succeeded", "job", job.Name, "result", job.Spec.Result)
 				} else {
 					job.Status.State = batchv1alpha1.Failed
+					a.reconcileJob.recorder.Event(job, "Warning", "Failed", "Job Failed, result:"+fmt.Sprint(job.Spec.Result))
 					log.Info("Job Failed", "job", job.Name, "result", job.Spec.Result)
 				}
-			} else {
-				job.Status.State = batchv1alpha1.Pending
-			}
-			err := a.reconcileJob.Update(context.TODO(), job)
-			if err != nil {
-				log.Error(err, "Error while updating the job")
+				err := a.reconcileJob.Update(context.TODO(), job)
+				if err != nil {
+					log.Error(err, "Error while updating the job")
+				}
 			}
 		}
-		time.Sleep(5 * time.Second)
+		time.Sleep(10 * time.Second)
 	}
 }
 
@@ -85,9 +91,9 @@ func (a *agent) isReadyForProcessing(job *batchv1alpha1.Job) bool {
 			if err != nil {
 				log.Error(err, "Error in finding job")
 			}
-			//return a.isReadyForProcessing(dependentJob)
 			if dependentJob.Status.State != batchv1alpha1.Succeeded {
 				log.Info("Dependent Job is not succeeded", "job", job.Name, "depedent-job", dependentJob.Name)
+				a.reconcileJob.recorder.Event(job, "Warning", "Pending", "Dependent Job is not succeeded, job:"+dependentJob.Name)
 				return false
 			}
 		}
@@ -114,9 +120,9 @@ var agents []*agent
 
 func init() {
 	agents = []*agent{
-		{name: "agent1", jobs: []*batchv1alpha1.Job{}},
-		//{name:"agent2", jobs: []*batchv1alpha1.Job{}},
-		//{name:"agent3", jobs: []*batchv1alpha1.Job{}},
+		{name: "agent1", jobsQueue: make(map[string]*batchv1alpha1.Job)},
+		{name: "agent2", jobsQueue: make(map[string]*batchv1alpha1.Job)},
+		{name: "agent3", jobsQueue: make(map[string]*batchv1alpha1.Job)},
 	}
 	for _, agent := range agents {
 		go agent.processJobs()
@@ -131,7 +137,7 @@ func Add(mgr manager.Manager) error {
 
 // newReconciler returns a new reconcile.Reconciler
 func newReconciler(mgr manager.Manager) reconcile.Reconciler {
-	return &ReconcileJob{Client: mgr.GetClient(), scheme: mgr.GetScheme()}
+	return &ReconcileJob{Client: mgr.GetClient(), scheme: mgr.GetScheme(), recorder: mgr.GetRecorder("job-controller")}
 }
 
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
@@ -166,14 +172,21 @@ var _ reconcile.Reconciler = &ReconcileJob{}
 // ReconcileJob reconciles a Job object
 type ReconcileJob struct {
 	client.Client
-	scheme *runtime.Scheme
+	scheme   *runtime.Scheme
+	recorder record.EventRecorder
 }
 
 // A simple scheduler that picks the agents randomly
 func (r *ReconcileJob) scheduleJobToAnAgent(job *batchv1alpha1.Job) string {
 	agent := agents[rand.Intn(len(agents))]
-	agent.jobs = append(agent.jobs, job)
+	//job.Status.State = batchv1alpha1.Pending
+	agent.jobsQueue[job.Namespace+"/"+job.Name] = job
 	agent.reconcileJob = r
+	//err := r.Status().Update(context.TODO(), job)
+	//if err != nil {
+	//	log.Error(err, "scheduleJobToAnAgent: Error while updating the job", "job", job.Name, "namespace", job.Namespace)
+	//}
+	r.recorder.Event(job, "Normal", "Pending", "Job Pending")
 	return agent.name
 }
 
@@ -184,8 +197,8 @@ func (r *ReconcileJob) scheduleJobToAnAgent(job *batchv1alpha1.Job) string {
 // Automatically generate RBAC rules to allow the Controller to read and write Deployments
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps,resources=deployments/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=batch.crossplane.io,resources=jobs,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=batch.crossplane.io,resources=jobs/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=batch.crossplane.io,resources=jobsQueue,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=batch.crossplane.io,resources=jobsQueue/status,verbs=get;update;patch
 func (r *ReconcileJob) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	// Fetch the Job instance
 	instance := &batchv1alpha1.Job{}
