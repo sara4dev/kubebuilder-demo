@@ -33,14 +33,16 @@ import (
 
 var c client.Client
 
-var expectedRequest = reconcile.Request{NamespacedName: types.NamespacedName{Name: "foo", Namespace: "default"}}
-var depKey = types.NamespacedName{Name: "foo-deployment", Namespace: "default"}
+var expectedRequest = reconcile.Request{NamespacedName: types.NamespacedName{Name: "job-a", Namespace: "default"}}
+var jobKey = types.NamespacedName{Name: "job-a", Namespace: "default"}
 
-const timeout = time.Second * 5
+const timeout = time.Minute * 5
 
 func TestReconcile(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
-	instance := &batchv1alpha1.Job{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
+	job_c := &batchv1alpha1.Job{ObjectMeta: metav1.ObjectMeta{Name: "job-c", Namespace: "default"}}
+	job_b := &batchv1alpha1.Job{ObjectMeta: metav1.ObjectMeta{Name: "job-b", Namespace: "default"}, Spec: batchv1alpha1.JobSpec{DependOnJobs: []string{"job-c"}}}
+	job_a := &batchv1alpha1.Job{ObjectMeta: metav1.ObjectMeta{Name: "job-a", Namespace: "default"}, Spec: batchv1alpha1.JobSpec{DependOnJobs: []string{"job-b"}}}
 
 	// Setup the Manager and Controller.  Wrap the Controller Reconcile function so it writes each request to a
 	// channel when it is finished.
@@ -59,29 +61,27 @@ func TestReconcile(t *testing.T) {
 	}()
 
 	// Create the Job object and expect the Reconcile and Deployment to be created
-	err = c.Create(context.TODO(), instance)
-	// The instance object may not be a valid object because it might be missing some required fields.
-	// Please modify the instance object by adding required fields and then remove the following if statement.
+	err = c.Create(context.TODO(), job_c)
+	err = c.Create(context.TODO(), job_b)
+	err = c.Create(context.TODO(), job_a)
+
+	// The job_a object may not be a valid object because it might be missing some required fields.
+	// Please modify the job_a object by adding required fields and then remove the following if statement.
 	if apierrors.IsInvalid(err) {
 		t.Logf("failed to create object, got an invalid object error: %v", err)
 		return
 	}
 	g.Expect(err).NotTo(gomega.HaveOccurred())
-	defer c.Delete(context.TODO(), instance)
+	defer c.Delete(context.TODO(), job_a)
+	defer c.Delete(context.TODO(), job_b)
+	defer c.Delete(context.TODO(), job_c)
 	g.Eventually(requests, timeout).Should(gomega.Receive(gomega.Equal(expectedRequest)))
 
-	//deploy := &appsv1.Deployment{}
-	//g.Eventually(func() error { return c.Get(context.TODO(), depKey, deploy) }, timeout).
-	//	Should(gomega.Succeed())
-	//
-	//// Delete the Deployment and expect Reconcile to be called for Deployment deletion
-	//g.Expect(c.Delete(context.TODO(), deploy)).NotTo(gomega.HaveOccurred())
-	//g.Eventually(requests, timeout).Should(gomega.Receive(gomega.Equal(expectedRequest)))
-	//g.Eventually(func() error { return c.Get(context.TODO(), depKey, deploy) }, timeout).
-	//	Should(gomega.Succeed())
-	//
-	//// Manually delete Deployment since GC isn't enabled in the test control plane
-	//g.Eventually(func() error { return c.Delete(context.TODO(), deploy) }, timeout).
-	//	Should(gomega.MatchError("deployments.apps \"foo-deployment\" not found"))
+	//Eventually the job should get processed
+	g.Eventually(func() batchv1alpha1.State {
+		instance := &batchv1alpha1.Job{}
+		c.Get(context.TODO(), jobKey, instance)
+		return instance.Status.State
+	}, timeout).Should(gomega.Equal(batchv1alpha1.Succeeded))
 
 }

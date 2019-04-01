@@ -4,9 +4,6 @@ metadata:
   labels:
     controller-tools.k8s.io: "1.0"
   name: job-c
-spec:
-  # Add fields here
-  dependOnJobs:
 ---
 apiVersion: batch.crossplane.io/v1alpha1
 kind: Job
