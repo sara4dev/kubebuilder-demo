@@ -27,7 +27,7 @@ rules:
 - apiGroups:
   - batch.crossplane.io
   resources:
-  - jobs
+  - agents
   verbs:
   - get
   - list
@@ -39,7 +39,47 @@ rules:
 - apiGroups:
   - batch.crossplane.io
   resources:
-  - jobs/status
+  - agents/status
+  verbs:
+  - get
+  - update
+  - patch
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - apps
+  resources:
+  - deployments/status
+  verbs:
+  - get
+  - update
+  - patch
+- apiGroups:
+  - batch.crossplane.io
+  resources:
+  - jobsQueue
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - batch.crossplane.io
+  resources:
+  - jobsQueue/status
   verbs:
   - get
   - update

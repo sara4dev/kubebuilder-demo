@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	batchv1alpha1 "github.com/saravanakumar-periyasamy/kubebuilder-demo/pkg/apis/batch/v1alpha1"
-	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
@@ -46,6 +45,19 @@ type agent struct {
 	name         string
 	jobsQueue    map[string]*batchv1alpha1.Job
 	reconcileJob *ReconcileJob
+}
+
+var agents []*agent
+
+func init() {
+	agents = []*agent{
+		{name: "agent1", jobsQueue: make(map[string]*batchv1alpha1.Job)},
+		{name: "agent2", jobsQueue: make(map[string]*batchv1alpha1.Job)},
+		{name: "agent3", jobsQueue: make(map[string]*batchv1alpha1.Job)},
+	}
+	for _, agent := range agents {
+		go agent.processJobs()
+	}
 }
 
 func (a *agent) processJobs() {
@@ -116,19 +128,6 @@ func (a *agent) findJobByName(name string, namespace string) (*batchv1alpha1.Job
 	return nil, fmt.Errorf("could not find the job %v in %v namespace", name, namespace)
 }
 
-var agents []*agent
-
-func init() {
-	agents = []*agent{
-		{name: "agent1", jobsQueue: make(map[string]*batchv1alpha1.Job)},
-		{name: "agent2", jobsQueue: make(map[string]*batchv1alpha1.Job)},
-		{name: "agent3", jobsQueue: make(map[string]*batchv1alpha1.Job)},
-	}
-	for _, agent := range agents {
-		go agent.processJobs()
-	}
-}
-
 // Add creates a new Job Controller and adds it to the Manager with default RBAC. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
 func Add(mgr manager.Manager) error {
@@ -150,16 +149,6 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 
 	// Watch for changes to Job
 	err = c.Watch(&source.Kind{Type: &batchv1alpha1.Job{}}, &handler.EnqueueRequestForObject{})
-	if err != nil {
-		return err
-	}
-
-	// TODO(user): Modify this to be the types you create
-	// Uncomment watch a Deployment created by Job - change this for objects you create
-	err = c.Watch(&source.Kind{Type: &appsv1.Deployment{}}, &handler.EnqueueRequestForOwner{
-		IsController: true,
-		OwnerType:    &batchv1alpha1.Job{},
-	})
 	if err != nil {
 		return err
 	}

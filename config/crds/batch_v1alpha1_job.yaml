@@ -31,27 +31,20 @@ spec:
             agent:
               description: Agent name assigned by the controller
               type: string
-            backoffLimit:
-              description: BackoffLimit to stop retrying after specified number of
-                times
-              format: int32
-              type: integer
             dependOnJobs:
               items:
                 type: string
               type: array
             result:
+              description: "BackoffLimit to stop retrying after specified number of
+                times BackoffLimit \tint32 `json:\"backoffLimit,omitempty\"`"
               format: int32
               type: integer
           type: object
         status:
           properties:
-            failed:
-              format: int32
-              type: integer
-            succeeded:
-              format: int32
-              type: integer
+            state:
+              type: string
           type: object
   version: v1alpha1
 status:
