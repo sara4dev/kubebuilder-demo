@@ -20,6 +20,7 @@ script:
   - make manager
 
 after_success:
+  - bash <(curl -s https://codecov.io/bash)
   - make docker-build
 
 deploy:
