@@ -1,0 +1,28 @@
+sudo: required
+
+services:
+  - docker
+
+env:
+  - CGO_ENABLED=0
+
+language: go
+
+go:
+  - "1.12"
+
+install: true
+
+script:
+  - make test
+#  - make manifests
+  - make manager
+
+after_success:
+  - make docker-build
+
+deploy:
+  provider: script
+  script: bash docker_push
+  on:
+    branch: master
