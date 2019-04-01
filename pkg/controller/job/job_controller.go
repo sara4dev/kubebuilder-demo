@@ -91,7 +91,7 @@ func (a *agent) processJobs() {
 				}
 			}
 		}
-		time.Sleep(10 * time.Second)
+		time.Sleep(5 * time.Second)
 	}
 }
 
