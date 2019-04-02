@@ -32,6 +32,7 @@ status:
 
 * `kubectl`
 * `kustomize`
+* `kubernetes cluster`
 
 #### Install steps 
 
