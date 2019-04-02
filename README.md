@@ -23,7 +23,7 @@ status:
   state: Succeeded
 ```
 
-![Sequence Diagram](Basic Sequence Diagram.png "Sequence Diagram")
+![Sequence Diagram](BasicSequenceDiagram.png)
 
 
 ## Install
