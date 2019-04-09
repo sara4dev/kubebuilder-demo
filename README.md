@@ -31,16 +31,15 @@ status:
 #### Prerequisites
 
 * `kubectl`
-* `kustomize`
 * `kubernetes cluster`
 
-#### Install steps 
+#### Install steps
 
 * clone the repo
-* run the below commands. 
+* run the below commands.
 ```
 kubectl apply -f config/crds
-kustomize build config/default | kubectl apply -f -
+kubectl apply -f config/demo.yaml
 ```
 
 ## Test
@@ -49,7 +48,7 @@ kustomize build config/default | kubectl apply -f -
 ```
 kubectl apply -f config/samples/batch_v1alpha1_job.yaml
 ```
-* List the jobs created 
+* List the jobs created
 ```
 kubectl get jobs.batch.crossplane.io
 ```
@@ -91,4 +90,3 @@ Events:
 ```
 kubectl logs -f kubebuilder-demo-controller-manager-0 -n kubebuilder-demo-system -c manager
 ```
-
